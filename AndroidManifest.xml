@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.android.contacts.mcp">
+    package="com.android.contacts.mcp"
+    android:versionCode="102"
+    android:versionName="1.0.2">
 
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
@@ -9,7 +11,11 @@
         <service
             android:name=".ContactsMcpService"
             android:permission="android.permission.BIND_LLM_MCP_SERVICE"
-            android:exported="true" />
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.llm.MCP_SERVICE" />
+            </intent-filter>
+        </service>
 
         <mcp-server
             android:name=".ContactsMcpService"
