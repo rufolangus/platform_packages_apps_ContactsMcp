@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.android.contacts.mcp">
+
+    <uses-permission android:name="android.permission.READ_CONTACTS" />
+
+    <application android:label="@string/app_name">
+
+        <service
+            android:name=".ContactsMcpService"
+            android:permission="android.permission.BIND_LLM_MCP_SERVICE"
+            android:exported="true" />
+
+        <mcp-server
+            android:name=".ContactsMcpService"
+            android:description="@string/mcp_description"
+            android:permission="android.permission.BIND_LLM_MCP_SERVICE">
+
+            <tool android:name="search_contacts"
+                  android:description="@string/tool_search_desc">
+                <input android:name="query"
+                       android:description="@string/input_query_desc" />
+            </tool>
+
+            <tool android:name="get_contact"
+                  android:description="@string/tool_get_desc">
+                <input android:name="name"
+                       android:description="@string/input_name_desc" />
+            </tool>
+
+            <tool android:name="list_favorites"
+                  android:description="@string/tool_favorites_desc" />
+
+        </mcp-server>
+
+    </application>
+</manifest>
