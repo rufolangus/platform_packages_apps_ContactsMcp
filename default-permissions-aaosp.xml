@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Default runtime permission grants for AAOSP system_ext apps.
+
+  Apps listed here have the named permissions auto-granted on first
+  install, with no user prompt. This is intentional for AAOSP-shipped
+  MCP-providing apps because the consent contract lives at the LLM
+  layer (HITL — see docs/), not the per-permission Android prompt.
+
+  Schema: frameworks/base/data/etc/default-permissions/README.txt
+  Installed to: /system_ext/etc/default-permissions/
+-->
+<exceptions>
+    <exception package="com.android.contacts.mcp">
+        <!--
+          ContactsMcp exposes search_contacts / get_contact / list_favorites
+          tools to the system LLM. Reading the contacts DB is its sole
+          purpose; the user opted in by installing the OS.
+        -->
+        <permission name="android.permission.READ_CONTACTS" fixed="false"/>
+    </exception>
+</exceptions>
