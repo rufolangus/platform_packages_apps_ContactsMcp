@@ -37,13 +37,22 @@ model end-to-end:
    `ContactsContract`.
 
 If the runtime permission is missing, `ContactsMcpService.addContact` /
-`updateContact` launches a translucent `PermissionRequestActivity` to
-host `requestPermissions` in-app. On Android 15 background-activity-launch
-gating this can be blocked, in which case the service returns
+`updateContact` returns
 `{"error":"needs_permission","permission":"android.permission.WRITE_CONTACTS",
-"package":"com.android.contacts.mcp"}` and the launcher's
-`PermissionRequiredCard` offers a one-tap *Open settings* fallback to the
-app's details page.
+"package":"com.android.contacts.mcp"}` immediately (~5 ms). The framework
+(`LlmManagerService.runChain`, v0.5.1) short-circuits on this error so the
+final answer pass doesn't generate prose that replaces the card, and the
+launcher's `PermissionRequiredCard` offers a one-tap *Open settings*
+fallback to the app's details page.
+
+Earlier versions launched a translucent `PermissionRequestActivity` to
+host `requestPermissions` in-app, but on Android 15 the
+background-activity-launch gating silently blocked the `startActivity`
+from the bound-service context. `PermissionRequestActivity` remains in
+this repo as the target of the PendingIntent-proxied grant flow queued
+for v0.6 (launcher is a foreground activity and can surface the
+permission dialog directly; the MCP returns a pending intent in the
+`needs_permission` response).
 
 Account binding: writes use `accountType=null` / `accountName=null` so
 the contact lives in the "local device" account — works out of the box on
