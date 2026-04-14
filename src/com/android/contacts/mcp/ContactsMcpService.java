@@ -483,29 +483,32 @@ public class ContactsMcpService extends Service {
     }
 
     /**
-     * Try to prompt the user for WRITE_CONTACTS via
-     * {@link PermissionRequestActivity}. On Android 15, background
-     * activity launch (BAL) is restricted — if the start fails or the
-     * user declines, we return a structured error the launcher catches
-     * and surfaces as an "Open settings" button.
+     * If the runtime WRITE_CONTACTS permission is missing, return a
+     * structured error immediately (~5 ms). The launcher's
+     * {@code PermissionRequiredCard} renders an "Open settings" CTA
+     * that deep-links to ACTION_APPLICATION_DETAILS_SETTINGS — the
+     * correct UX for a missing runtime permission.
+     *
+     * <p>v0.5.1: the previous implementation launched
+     * {@link PermissionRequestActivity} via {@code startActivity} from
+     * this bound-service context. On Android 15 that start silently
+     * fails under BAL (background-activity-launch) gating; the service
+     * then sits on a 30 s latch waiting for a dialog that never
+     * renders, while the framework dispatcher's own latch (10 s in
+     * v0.5, now 60 s in v0.5.1) would time out first and return
+     * {@code "tool timeout"} upstream — so the launcher never saw the
+     * {@code needs_permission} JSON and {@code PermissionRequiredCard}
+     * never fired. Returning the error immediately is the honest flow
+     * on Android 15.
+     *
+     * <p>The proper fix (v0.6) is a PendingIntent proxied through the
+     * launcher — the launcher is a foreground activity, so no BAL
+     * block — letting the MCP request the permission without sending
+     * the user to Settings. {@link PermissionRequestActivity} stays in
+     * the tree as the eventual target of that flow.
      */
     private String requestWriteContactsOrError() {
-        PermissionRequestActivity.Gate gate = PermissionRequestActivity.newGate();
-        Intent i = new Intent(this, PermissionRequestActivity.class);
-        i.putExtra(PermissionRequestActivity.EXTRA_PERMISSION,
-                Manifest.permission.WRITE_CONTACTS);
-        i.putExtra(PermissionRequestActivity.EXTRA_GATE_ID, gate.id);
-        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        try {
-            startActivity(i);
-        } catch (Exception e) {
-            Log.w(TAG, "BAL blocked for permission request: " + e);
-            return needsPermissionError();
-        }
-        boolean granted = gate.await(30, java.util.concurrent.TimeUnit.SECONDS);
-        if (granted && hasWriteContacts()) {
-            return null; // proceed with the write
-        }
+        if (hasWriteContacts()) return null;
         return needsPermissionError();
     }
 
