@@ -16,23 +16,30 @@
 
 package com.android.contacts.mcp;
 
+import android.Manifest;
 import android.app.Service;
+import android.content.ContentProviderOperation;
 import android.content.ContentResolver;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.IBinder;
 import android.provider.ContactsContract;
 import android.provider.ContactsContract.CommonDataKinds.Email;
 import android.provider.ContactsContract.CommonDataKinds.Phone;
+import android.provider.ContactsContract.CommonDataKinds.StructuredName;
 import android.provider.ContactsContract.Contacts;
 import android.provider.ContactsContract.Data;
+import android.provider.ContactsContract.RawContacts;
 import android.llm.IMcpToolProvider;
 import android.util.Log;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import java.util.ArrayList;
 
 /**
  * MCP tool provider for Contacts.
@@ -79,6 +86,16 @@ public class ContactsMcpService extends Service {
                         return getContact(args.optString("name", ""));
                     case "list_favorites":
                         return listFavorites();
+                    case "add_contact":
+                        return addContact(
+                                args.optString("name", ""),
+                                args.optString("phone", ""),
+                                args.optString("email", ""));
+                    case "update_contact":
+                        return updateContact(
+                                args.optString("name", ""),
+                                args.optString("phone", ""),
+                                args.optString("email", ""));
                     default:
                         return error("Unknown tool: " + toolName);
                 }
@@ -328,6 +345,185 @@ public class ContactsMcpService extends Service {
             return result.toString();
         } catch (JSONException e) {
             return error("JSON error");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Write tools
+    // ------------------------------------------------------------------
+
+    /**
+     * Create a new contact. Uses {@code ACCOUNT_TYPE=null} / {@code
+     * ACCOUNT_NAME=null} so the contact lives in the "local device"
+     * account — works on stock Cuttlefish which has no Google account
+     * signed in.
+     */
+    private String addContact(String name, String phone, String email) {
+        if (name == null || name.trim().isEmpty()) {
+            return error("name is required");
+        }
+        if (!hasWriteContacts()) {
+            String err = requestWriteContactsOrError();
+            if (err != null) return err;
+        }
+        ArrayList<ContentProviderOperation> ops = new ArrayList<>();
+        ops.add(ContentProviderOperation.newInsert(RawContacts.CONTENT_URI)
+                .withValue(RawContacts.ACCOUNT_TYPE, null)
+                .withValue(RawContacts.ACCOUNT_NAME, null)
+                .build());
+        ops.add(ContentProviderOperation.newInsert(Data.CONTENT_URI)
+                .withValueBackReference(Data.RAW_CONTACT_ID, 0)
+                .withValue(Data.MIMETYPE, StructuredName.CONTENT_ITEM_TYPE)
+                .withValue(StructuredName.DISPLAY_NAME, name.trim())
+                .build());
+        if (phone != null && !phone.isEmpty()) {
+            ops.add(ContentProviderOperation.newInsert(Data.CONTENT_URI)
+                    .withValueBackReference(Data.RAW_CONTACT_ID, 0)
+                    .withValue(Data.MIMETYPE, Phone.CONTENT_ITEM_TYPE)
+                    .withValue(Phone.NUMBER, phone)
+                    .withValue(Phone.TYPE, Phone.TYPE_MOBILE)
+                    .build());
+        }
+        if (email != null && !email.isEmpty()) {
+            ops.add(ContentProviderOperation.newInsert(Data.CONTENT_URI)
+                    .withValueBackReference(Data.RAW_CONTACT_ID, 0)
+                    .withValue(Data.MIMETYPE, Email.CONTENT_ITEM_TYPE)
+                    .withValue(Email.ADDRESS, email)
+                    .withValue(Email.TYPE, Email.TYPE_HOME)
+                    .build());
+        }
+        try {
+            getContentResolver().applyBatch(ContactsContract.AUTHORITY, ops);
+            JSONObject ok = new JSONObject();
+            ok.put("status", "added");
+            ok.put("name", name.trim());
+            if (phone != null && !phone.isEmpty()) ok.put("phone", phone);
+            if (email != null && !email.isEmpty()) ok.put("email", email);
+            return ok.toString();
+        } catch (SecurityException se) {
+            return needsPermissionError();
+        } catch (Exception e) {
+            Log.e(TAG, "addContact failed", e);
+            return error("add failed: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Append a phone or email to an existing contact matched by name.
+     * Does not edit existing values — safer default; the model can call
+     * again with different values if the user wants a replacement.
+     */
+    private String updateContact(String name, String phone, String email) {
+        if (name == null || name.trim().isEmpty()) {
+            return error("name is required");
+        }
+        if ((phone == null || phone.isEmpty())
+                && (email == null || email.isEmpty())) {
+            return error("provide phone or email");
+        }
+        if (!hasWriteContacts()) {
+            String err = requestWriteContactsOrError();
+            if (err != null) return err;
+        }
+        ContentResolver cr = getContentResolver();
+        long rawContactId = -1;
+        String resolvedName = null;
+        // Find the raw contact id for the first matching display name.
+        try (Cursor c = cr.query(RawContacts.CONTENT_URI,
+                new String[]{RawContacts._ID, RawContacts.CONTACT_ID,
+                        RawContacts.DISPLAY_NAME_PRIMARY},
+                RawContacts.DISPLAY_NAME_PRIMARY + " LIKE ? AND "
+                        + RawContacts.DELETED + "=0",
+                new String[]{"%" + name + "%"},
+                null)) {
+            if (c != null && c.moveToFirst()) {
+                rawContactId = c.getLong(0);
+                resolvedName = c.getString(2);
+            }
+        }
+        if (rawContactId < 0) {
+            return error("no contact matches: " + name);
+        }
+        ArrayList<ContentProviderOperation> ops = new ArrayList<>();
+        if (phone != null && !phone.isEmpty()) {
+            ops.add(ContentProviderOperation.newInsert(Data.CONTENT_URI)
+                    .withValue(Data.RAW_CONTACT_ID, rawContactId)
+                    .withValue(Data.MIMETYPE, Phone.CONTENT_ITEM_TYPE)
+                    .withValue(Phone.NUMBER, phone)
+                    .withValue(Phone.TYPE, Phone.TYPE_MOBILE)
+                    .build());
+        }
+        if (email != null && !email.isEmpty()) {
+            ops.add(ContentProviderOperation.newInsert(Data.CONTENT_URI)
+                    .withValue(Data.RAW_CONTACT_ID, rawContactId)
+                    .withValue(Data.MIMETYPE, Email.CONTENT_ITEM_TYPE)
+                    .withValue(Email.ADDRESS, email)
+                    .withValue(Email.TYPE, Email.TYPE_HOME)
+                    .build());
+        }
+        try {
+            cr.applyBatch(ContactsContract.AUTHORITY, ops);
+            JSONObject ok = new JSONObject();
+            ok.put("status", "updated");
+            ok.put("name", resolvedName);
+            if (phone != null && !phone.isEmpty()) ok.put("phone_added", phone);
+            if (email != null && !email.isEmpty()) ok.put("email_added", email);
+            return ok.toString();
+        } catch (SecurityException se) {
+            return needsPermissionError();
+        } catch (Exception e) {
+            Log.e(TAG, "updateContact failed", e);
+            return error("update failed: " + e.getMessage());
+        }
+    }
+
+    private boolean hasWriteContacts() {
+        return checkSelfPermission(Manifest.permission.WRITE_CONTACTS)
+                == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /**
+     * Try to prompt the user for WRITE_CONTACTS via
+     * {@link PermissionRequestActivity}. On Android 15, background
+     * activity launch (BAL) is restricted — if the start fails or the
+     * user declines, we return a structured error the launcher catches
+     * and surfaces as an "Open settings" button.
+     */
+    private String requestWriteContactsOrError() {
+        PermissionRequestActivity.Gate gate = PermissionRequestActivity.newGate();
+        Intent i = new Intent(this, PermissionRequestActivity.class);
+        i.putExtra(PermissionRequestActivity.EXTRA_PERMISSION,
+                Manifest.permission.WRITE_CONTACTS);
+        i.putExtra(PermissionRequestActivity.EXTRA_GATE_ID, gate.id);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            startActivity(i);
+        } catch (Exception e) {
+            Log.w(TAG, "BAL blocked for permission request: " + e);
+            return needsPermissionError();
+        }
+        boolean granted = gate.await(30, java.util.concurrent.TimeUnit.SECONDS);
+        if (granted && hasWriteContacts()) {
+            return null; // proceed with the write
+        }
+        return needsPermissionError();
+    }
+
+    /**
+     * Structured error the launcher parses to pop the "Open settings"
+     * CTA. Includes the permission name and owning package so the
+     * launcher can fire the right ACTION_APPLICATION_DETAILS_SETTINGS
+     * intent without hardcoding ContactsMcp.
+     */
+    private static String needsPermissionError() {
+        try {
+            JSONObject e = new JSONObject();
+            e.put("error", "needs_permission");
+            e.put("permission", Manifest.permission.WRITE_CONTACTS);
+            e.put("package", "com.android.contacts.mcp");
+            return e.toString();
+        } catch (JSONException je) {
+            return "{\"error\":\"needs_permission\",\"permission\":\"android.permission.WRITE_CONTACTS\",\"package\":\"com.android.contacts.mcp\"}";
         }
     }
 

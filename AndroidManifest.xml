@@ -1,12 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.android.contacts.mcp"
-    android:versionCode="102"
-    android:versionName="1.0.2">
+    android:versionCode="104"
+    android:versionName="1.0.4">
 
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    <!--
+      WRITE_CONTACTS is intentionally NOT granted via
+      default-permissions-aaosp.xml — the first add_contact / update_contact
+      must be granted by the user (via Settings → Apps → ContactsMcp →
+      Permissions). This is the v0.4 demo: two layers of consent — the
+      HITL tool prompt (LLM → tool) AND the Android runtime permission
+      (tool → ContactsProvider). If the perm isn't held we return
+      {"error":"needs WRITE_CONTACTS"} and the model surfaces it.
+    -->
+    <uses-permission android:name="android.permission.WRITE_CONTACTS" />
 
     <application android:label="@string/app_name">
+
+        <!--
+          Translucent activity ContactsMcpService launches when it needs
+          a dangerous runtime permission it doesn't yet hold. If Android
+          15 BAL gating blocks the start, the service returns a
+          structured "needs_permission" error and the launcher shows the
+          "Open settings" fallback.
+        -->
+        <activity
+            android:name=".PermissionRequestActivity"
+            android:exported="false"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:excludeFromRecents="true"
+            android:noHistory="true" />
 
         <service
             android:name=".ContactsMcpService"
@@ -36,6 +60,31 @@
 
             <tool android:name="list_favorites"
                   android:description="@string/tool_favorites_desc" />
+
+            <!-- Write tools — require HITL confirmation every time. -->
+            <tool android:name="add_contact"
+                  android:description="@string/tool_add_desc"
+                  android:mcpRequiresConfirmation="true">
+                <input android:name="name"
+                       android:mcpRequired="true"
+                       android:description="@string/input_name_new_desc" />
+                <input android:name="phone"
+                       android:description="@string/input_phone_desc" />
+                <input android:name="email"
+                       android:description="@string/input_email_desc" />
+            </tool>
+
+            <tool android:name="update_contact"
+                  android:description="@string/tool_update_desc"
+                  android:mcpRequiresConfirmation="true">
+                <input android:name="name"
+                       android:mcpRequired="true"
+                       android:description="@string/input_name_existing_desc" />
+                <input android:name="phone"
+                       android:description="@string/input_phone_append_desc" />
+                <input android:name="email"
+                       android:description="@string/input_email_append_desc" />
+            </tool>
 
         </mcp-server>
 

@@ -8,4 +8,14 @@
     <string name="input_query_desc">Search term: name, phone number, or email address</string>
     <string name="input_name_desc">The contact\'s display name</string>
     <string name="resource_all_desc">All contacts on the device</string>
+
+    <!-- v0.4 write-tool descriptions. -->
+    <string name="tool_add_desc">Create a new contact with name, phone, and/or email</string>
+    <string name="tool_update_desc">Add a phone number or email to an existing contact found by name</string>
+    <string name="input_name_new_desc">The display name for the new contact</string>
+    <string name="input_name_existing_desc">Existing contact\'s display name to match</string>
+    <string name="input_phone_desc">Phone number (optional)</string>
+    <string name="input_email_desc">Email address (optional)</string>
+    <string name="input_phone_append_desc">Phone number to append (optional)</string>
+    <string name="input_email_append_desc">Email address to append (optional)</string>
 </resources>
