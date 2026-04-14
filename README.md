@@ -1,8 +1,8 @@
 # ContactsMcp
 
 First reference MCP-providing app for [AAOSP](https://github.com/rufolangus/AAOSP).
-Paired with [CalendarMcp](./CalendarMcp_README.md) as of v0.5 to demo
-cross-MCP chaining.
+Paired with [CalendarMcp](https://github.com/rufolangus/platform_packages_apps_CalendarMcp)
+as of v0.5 to demo cross-MCP chaining.
 
 Declares five tools in its `AndroidManifest.xml` that the system LLM
 (`LlmManagerService`) can invoke over Binder via `IMcpToolProvider`.
